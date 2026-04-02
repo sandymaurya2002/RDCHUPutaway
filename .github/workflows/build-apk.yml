@@ -33,9 +33,7 @@ jobs:
         run: |
           sdkmanager "platforms;android-34" "build-tools;34.0.0" 2>/dev/null | grep -E "done|Installed" || true
 
-      # Step 1: Init scaffold WITHOUT --skip-install so it runs npm install itself
-      # This guarantees node_modules exists before gradle ever runs
-      - name: 🏗️ react-native init (with npm install)
+      - name: 🏗️ react-native init with full npm install
         env:
           CI: ""
         run: |
@@ -43,35 +41,33 @@ jobs:
             --version 0.73.6 \
             --directory /tmp/RDCBuild \
             --npm
-          echo "✅ Init + npm install done"
-          echo "=== node_modules exists? ==="
-          ls /tmp/RDCBuild/node_modules/@react-native/gradle-plugin/ | head -5
-          echo "=== settings.gradle ==="
-          cat /tmp/RDCBuild/android/settings.gradle
-          echo "=== app/build.gradle ==="
-          cat /tmp/RDCBuild/android/app/build.gradle
+          echo "✅ Init done"
+          echo "node_modules: $(ls /tmp/RDCBuild/node_modules | wc -l) packages"
 
-      # Step 2: Replace scaffold's package.json with ours and re-install our deps
-      - name: 📦 Install our dependencies
+      - name: 📦 Add our extra dependencies
         run: |
-          cp -f $GITHUB_WORKSPACE/package.json /tmp/RDCBuild/package.json
           cd /tmp/RDCBuild
-          npm install --legacy-peer-deps
-          echo "✅ $(ls node_modules | wc -l) packages"
-          # Verify RN gradle plugin still intact
-          ls node_modules/@react-native/gradle-plugin/
+          npm install --legacy-peer-deps \
+            axios@^1.6.8 \
+            @react-navigation/native@^6.1.17 \
+            @react-navigation/native-stack@^6.9.26 \
+            react-native-screens@^3.30.1 \
+            react-native-safe-area-context@^4.9.0 \
+            react-native-vision-camera@^4.3.2 \
+            @react-native-async-storage/async-storage@^1.23.1
+          echo "✅ Extra deps installed"
 
-      # Step 3: Overlay ONLY JS source - zero android gradle files touched
-      - name: 🔀 Overlay JS source only
+      - name: 🔀 Overlay our files
         run: |
           S=/tmp/RDCBuild
           W=$GITHUB_WORKSPACE
 
+          # JS source
           rm -rf $S/src
           cp -rf $W/src $S/src
           cp -f $W/App.js $W/index.js $W/app.json $W/babel.config.js $W/metro.config.js $S/
 
-          # Resources only (no gradle files)
+          # Android resources only (NO gradle files)
           cp -f $W/android/app/src/main/AndroidManifest.xml \
                 $S/android/app/src/main/AndroidManifest.xml
           cp -f $W/android/app/src/main/res/values/strings.xml \
@@ -79,29 +75,45 @@ jobs:
           cp -f $W/android/app/src/main/res/values/styles.xml \
                 $S/android/app/src/main/res/values/styles.xml
 
-          # Kotlin files - auto-detect scaffold's package
+          # Kotlin - detect scaffold package
           KT_DIR=$(find $S/android -name "MainActivity.kt" | head -1 | xargs dirname)
           PKG=$(echo $KT_DIR | sed 's|.*/java/||' | tr '/' '.')
           echo "Scaffold package: $PKG"
+
           sed "s/^package .*/package $PKG/" \
             $W/android/app/src/main/java/com/rdchuputaway/MainActivity.kt > $KT_DIR/MainActivity.kt
           sed "s/^package .*/package $PKG/" \
             $W/android/app/src/main/java/com/rdchuputaway/MainApplication.kt > $KT_DIR/MainApplication.kt
 
-          echo "✅ JS overlay done - all gradle files untouched"
+          # Generate debug keystore if missing
+          if [ ! -f "$S/android/app/debug.keystore" ]; then
+            keytool -genkeypair -v \
+              -keystore $S/android/app/debug.keystore \
+              -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 \
+              -validity 10000 \
+              -storepass android \
+              -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US" 2>/dev/null
+            echo "✅ debug.keystore generated"
+          fi
+
+          echo "✅ Overlay complete"
+          echo "=== Kotlin files ==="
+          find $S/android/app/src/main/java -name "*.kt"
 
       - name: ⬇️ Download gradle-wrapper.jar
         run: |
           curl -fsSL \
             "https://raw.githubusercontent.com/gradle/gradle/v8.6.0/gradle/wrapper/gradle-wrapper.jar" \
             -o /tmp/RDCBuild/android/gradle/wrapper/gradle-wrapper.jar
-          ls -lh /tmp/RDCBuild/android/gradle/wrapper/
+          ls -lh /tmp/RDCBuild/android/gradle/wrapper/gradle-wrapper.jar
 
       - name: 💾 Cache Gradle
         uses: actions/cache@v4
         with:
           path: ~/.gradle
-          key: gradle-${{ runner.os }}-rn073-final-v1
+          key: gradle-${{ runner.os }}-rn073-final-v2
 
       - name: 🔧 chmod gradlew
         run: chmod +x /tmp/RDCBuild/android/gradlew
@@ -109,6 +121,8 @@ jobs:
       - name: 🏗️ Build APK
         run: |
           cd /tmp/RDCBuild/android
+          echo "=== gradle-wrapper ==="
+          cat gradle/wrapper/gradle-wrapper.properties
           ./gradlew assembleDebug \
             --no-daemon \
             --stacktrace \
