@@ -9,108 +9,67 @@ jobs:
   build-apk:
     name: Build Debug APK
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
+    container:
+      image: reactnativecommunity/react-native-android:latest
 
     steps:
-      - name: 📥 Checkout repository
+      - name: 📥 Checkout
         uses: actions/checkout@v4
 
-      - name: 🟢 Setup Node.js 18
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-
-      - name: ☕ Setup Java 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: 🤖 Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: 'tools platform-tools platforms;android-34 build-tools;34.0.0'
-
-      - name: 📦 Install React Native CLI
-        run: npm install -g react-native@0.73.6 @react-native-community/cli
-
-      - name: 🏗️ Scaffold fresh React Native project
+      - name: 🟢 Use Node 18
         run: |
-          cd $RUNNER_TEMP
-          npx react-native@0.73.6 init RDCBase --version 0.73.6 --skip-install
+          node --version
+          npm --version
+          java -version
+
+      - name: 🏗️ Scaffold React Native project
+        run: |
+          cd /tmp
+          npx react-native@0.73.6 init RDCScaffold \
+            --version 0.73.6 \
+            --skip-install \
+            --npm
           echo "✅ Scaffold done"
 
-      - name: 🔀 Overlay our source files onto scaffold
+      - name: 🔀 Overlay source files
         run: |
-          BASE=$RUNNER_TEMP/RDCBase
-          SRC=$GITHUB_WORKSPACE
+          S=/tmp/RDCScaffold
+          W=$GITHUB_WORKSPACE
+          cp -rf $W/src $S/
+          cp -f $W/App.js $W/index.js $W/app.json $W/babel.config.js $W/metro.config.js $W/package.json $S/
+          cp -f $W/android/build.gradle $S/android/build.gradle
+          cp -f $W/android/settings.gradle $S/android/settings.gradle
+          cp -f $W/android/gradle.properties $S/android/gradle.properties
+          cp -f $W/android/app/build.gradle $S/android/app/build.gradle
+          cp -f $W/android/app/proguard-rules.pro $S/android/app/proguard-rules.pro
+          cp -f $W/android/app/src/main/AndroidManifest.xml $S/android/app/src/main/AndroidManifest.xml
+          cp -f $W/android/app/src/main/res/values/strings.xml $S/android/app/src/main/res/values/strings.xml
+          cp -f $W/android/app/src/main/res/values/styles.xml $S/android/app/src/main/res/values/styles.xml
+          mkdir -p $S/android/app/src/main/java/com/rdchuputaway
+          cp -f $W/android/app/src/main/java/com/rdchuputaway/*.kt $S/android/app/src/main/java/com/rdchuputaway/
+          echo "✅ Overlay done"
 
-          # Copy our source files
-          cp -rf $SRC/src $BASE/
-          cp -f $SRC/App.js $BASE/App.js
-          cp -f $SRC/app.json $BASE/app.json
-          cp -f $SRC/index.js $BASE/index.js
-          cp -f $SRC/babel.config.js $BASE/babel.config.js
-          cp -f $SRC/metro.config.js $BASE/metro.config.js
-          cp -f $SRC/package.json $BASE/package.json
-
-          # Copy android config files (keep scaffold's native files, overlay ours)
-          cp -f $SRC/android/build.gradle $BASE/android/build.gradle
-          cp -f $SRC/android/settings.gradle $BASE/android/settings.gradle
-          cp -f $SRC/android/gradle.properties $BASE/android/gradle.properties
-          cp -f $SRC/android/app/build.gradle $BASE/android/app/build.gradle
-          cp -f $SRC/android/app/src/main/AndroidManifest.xml $BASE/android/app/src/main/AndroidManifest.xml
-          cp -f $SRC/android/app/src/main/res/values/strings.xml $BASE/android/app/src/main/res/values/strings.xml
-          cp -f $SRC/android/app/src/main/res/values/styles.xml $BASE/android/app/src/main/res/values/styles.xml
-
-          # Copy Kotlin files
-          mkdir -p $BASE/android/app/src/main/java/com/rdchuputaway
-          cp -f $SRC/android/app/src/main/java/com/rdchuputaway/MainActivity.kt $BASE/android/app/src/main/java/com/rdchuputaway/MainActivity.kt
-          cp -f $SRC/android/app/src/main/java/com/rdchuputaway/MainApplication.kt $BASE/android/app/src/main/java/com/rdchuputaway/MainApplication.kt
-
-          echo "✅ Source overlay done"
-          ls $BASE/src/screens/
-
-      - name: 📦 Install npm dependencies
+      - name: 📦 Install dependencies
         run: |
-          cd $RUNNER_TEMP/RDCBase
-          npm install
-          echo "✅ npm install done"
+          cd /tmp/RDCScaffold
+          npm install --legacy-peer-deps
 
       - name: 💾 Cache Gradle
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*') }}
+          path: ~/.gradle
+          key: gradle-v1-${{ hashFiles('/tmp/RDCScaffold/android/gradle/wrapper/gradle-wrapper.properties') }}
 
-      - name: 🔧 Make gradlew executable
-        run: chmod +x $RUNNER_TEMP/RDCBase/android/gradlew
-
-      - name: 🏗️ Build Debug APK
+      - name: 🏗️ Build APK
         run: |
-          cd $RUNNER_TEMP/RDCBase/android
-          ./gradlew assembleDebug --no-daemon --stacktrace
-        env:
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          cd /tmp/RDCScaffold/android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon -Dorg.gradle.jvmargs="-Xmx4g"
 
-      - name: 📋 Copy APK to workspace
-        run: |
-          cp $RUNNER_TEMP/RDCBase/android/app/build/outputs/apk/debug/app-debug.apk \
-             $GITHUB_WORKSPACE/RDCHUPutaway-debug.apk
-          echo "APK size: $(du -sh $GITHUB_WORKSPACE/RDCHUPutaway-debug.apk)"
-
-      - name: 📤 Upload APK artifact
+      - name: 📤 Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: RDCHUPutaway-debug-apk
-          path: RDCHUPutaway-debug.apk
+          path: /tmp/RDCScaffold/android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
-
-      - name: ✅ Build Summary
-        run: |
-          echo "## ✅ APK Built Successfully!" >> $GITHUB_STEP_SUMMARY
-          echo "**File:** RDCHUPutaway-debug.apk" >> $GITHUB_STEP_SUMMARY
-          echo "**SAP Server:** https://sap-api.v2retail.net" >> $GITHUB_STEP_SUMMARY
-          echo "**Default User:** 901 | **Plant:** DW01" >> $GITHUB_STEP_SUMMARY
