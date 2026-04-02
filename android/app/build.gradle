@@ -1,19 +1,20 @@
 apply plugin: "com.android.application"
+apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
 android {
     ndkVersion rootProject.ext.ndkVersion
-    buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
 
     namespace "com.rdchuputaway"
 
     defaultConfig {
         applicationId "com.rdchuputaway"
-        minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion rootProject.ext.targetSdkVersion
+        minSdk rootProject.ext.minSdkVersion
+        targetSdk rootProject.ext.targetSdkVersion
         versionCode 1
-        versionName "1.0.0"
+        versionName "1.0"
     }
 
     signingConfigs {
@@ -22,13 +23,6 @@ android {
             storePassword 'android'
             keyAlias 'androiddebugkey'
             keyPassword 'android'
-        }
-        release {
-            // 🔧 Configure release signing here
-            // storeFile file(MYAPP_RELEASE_STORE_FILE)
-            // storePassword MYAPP_RELEASE_STORE_PASSWORD
-            // keyAlias MYAPP_RELEASE_KEY_ALIAS
-            // keyPassword MYAPP_RELEASE_KEY_PASSWORD
         }
     }
 
@@ -39,14 +33,16 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
-            signingConfig signingConfigs.debug // Change to signingConfigs.release for prod
+            signingConfig signingConfigs.debug
         }
     }
+}
+
+react {
+    // Defaults are fine
 }
 
 dependencies {
     implementation("com.facebook.react:react-android")
     implementation("com.facebook.react:hermes-android")
 }
-
-apply from: file("../../node_modules/@react-native/gradle-plugin/react-native-defaults.gradle")

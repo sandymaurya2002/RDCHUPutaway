@@ -37,7 +37,6 @@ jobs:
         run: |
           npm install --legacy-peer-deps
           echo "✅ $(ls node_modules | wc -l) packages"
-          ls node_modules/@react-native/gradle-plugin/
 
       - name: ⬇️ Download gradle-wrapper.jar
         run: |
@@ -46,38 +45,19 @@ jobs:
             -o android/gradle/wrapper/gradle-wrapper.jar
           ls -lh android/gradle/wrapper/gradle-wrapper.jar
 
-      - name: 🔧 Fix settings.gradle with absolute path
+      - name: 🔧 Setup
         run: |
-          ROOT=$(pwd)
-          PLUGIN_PATH="$ROOT/node_modules/@react-native/gradle-plugin"
-          echo "Plugin path: $PLUGIN_PATH"
-          ls "$PLUGIN_PATH"
-
-          python3 - <<PYEOF
-import os
-root = os.getcwd()
-plugin_path = os.path.join(root, "node_modules", "@react-native", "gradle-plugin")
-content = f"""pluginManagement {{ includeBuild("{plugin_path}") }}
-plugins {{ id("com.facebook.react.settings") }}
-extensions.configure(com.facebook.react.ReactSettingsExtension){{ ex -> ex.autolinkLibrariesFromCommand() }}
-rootProject.name = 'RDCHUPutaway'
-include ':app'
-includeBuild("{plugin_path}")
-"""
-with open("android/settings.gradle", "w") as f:
-    f.write(content)
-print("=== settings.gradle written ===")
-print(open("android/settings.gradle").read())
-PYEOF
-
-      - name: 🔧 chmod gradlew
-        run: chmod +x android/gradlew
+          chmod +x android/gradlew
+          echo "=== settings.gradle ==="
+          cat android/settings.gradle
+          echo "=== build.gradle ==="
+          cat android/build.gradle
 
       - name: 💾 Cache Gradle
         uses: actions/cache@v4
         with:
           path: ~/.gradle
-          key: gradle-${{ runner.os }}-8-6-v7
+          key: gradle-${{ runner.os }}-classpath-v1
 
       - name: 🏗️ Build APK
         run: |
