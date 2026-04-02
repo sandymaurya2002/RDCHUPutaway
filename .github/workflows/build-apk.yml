@@ -29,60 +29,38 @@ jobs:
       - name: 🤖 Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: 📦 Android SDK platforms
-        run: |
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" 2>/dev/null | tail -3 || true
+      - name: 📦 Android platforms
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0" 2>/dev/null | tail -2 || true
 
-      - name: ⬇️ Download official RN 0.73.6 template files
+      - name: ⬇️ Download RN 0.73.6 template
         run: |
           BASE="https://raw.githubusercontent.com/facebook/react-native/v0.73.6/packages/react-native/template"
           mkdir -p /tmp/RDCBuild/android/app/src/main/java/com/rdcbuild
           mkdir -p /tmp/RDCBuild/android/app/src/main/res/values
           mkdir -p /tmp/RDCBuild/android/app/src/main/res/drawable
           mkdir -p /tmp/RDCBuild/android/gradle/wrapper
+          curl -fsSL "$BASE/android/build.gradle"                        -o /tmp/RDCBuild/android/build.gradle
+          curl -fsSL "$BASE/android/settings.gradle"                     -o /tmp/RDCBuild/android/settings.gradle
+          curl -fsSL "$BASE/android/gradle.properties"                   -o /tmp/RDCBuild/android/gradle.properties
+          curl -fsSL "$BASE/android/gradlew"                             -o /tmp/RDCBuild/android/gradlew
+          curl -fsSL "$BASE/android/gradlew.bat"                         -o /tmp/RDCBuild/android/gradlew.bat
+          curl -fsSL "$BASE/android/gradle/wrapper/gradle-wrapper.properties" -o /tmp/RDCBuild/android/gradle/wrapper/gradle-wrapper.properties
+          curl -fsSL "$BASE/android/gradle/wrapper/gradle-wrapper.jar"   -o /tmp/RDCBuild/android/gradle/wrapper/gradle-wrapper.jar
+          curl -fsSL "$BASE/android/app/build.gradle"                    -o /tmp/RDCBuild/android/app/build.gradle
+          curl -fsSL "$BASE/android/app/src/main/AndroidManifest.xml"    -o /tmp/RDCBuild/android/app/src/main/AndroidManifest.xml
+          curl -fsSL "$BASE/android/app/src/main/res/values/strings.xml" -o /tmp/RDCBuild/android/app/src/main/res/values/strings.xml
+          curl -fsSL "$BASE/android/app/src/main/res/values/styles.xml"  -o /tmp/RDCBuild/android/app/src/main/res/values/styles.xml
+          echo "✅ Template downloaded"
+          ls /tmp/RDCBuild/android/gradle/wrapper/
 
-          curl -fsSL "$BASE/android/build.gradle"            -o /tmp/RDCBuild/android/build.gradle
-          curl -fsSL "$BASE/android/settings.gradle"         -o /tmp/RDCBuild/android/settings.gradle
-          curl -fsSL "$BASE/android/gradle.properties"       -o /tmp/RDCBuild/android/gradle.properties
-          curl -fsSL "$BASE/android/gradlew"                 -o /tmp/RDCBuild/android/gradlew
-          curl -fsSL "$BASE/android/gradlew.bat"             -o /tmp/RDCBuild/android/gradlew.bat
-          curl -fsSL "$BASE/android/gradle/wrapper/gradle-wrapper.properties" \
-                                                             -o /tmp/RDCBuild/android/gradle/wrapper/gradle-wrapper.properties
-          curl -fsSL "$BASE/android/gradle/wrapper/gradle-wrapper.jar" \
-                                                             -o /tmp/RDCBuild/android/gradle/wrapper/gradle-wrapper.jar
-          curl -fsSL "$BASE/android/app/build.gradle"        -o /tmp/RDCBuild/android/app/build.gradle
-          curl -fsSL "$BASE/android/app/src/main/java/com/helloworld/MainActivity.kt" \
-                                                             -o /tmp/RDCBuild/android/app/src/main/java/com/rdcbuild/MainActivity.kt
-          curl -fsSL "$BASE/android/app/src/main/java/com/helloworld/MainApplication.kt" \
-                                                             -o /tmp/RDCBuild/android/app/src/main/java/com/rdcbuild/MainApplication.kt
-          curl -fsSL "$BASE/android/app/src/main/AndroidManifest.xml" \
-                                                             -o /tmp/RDCBuild/android/app/src/main/AndroidManifest.xml
-          curl -fsSL "$BASE/android/app/src/main/res/values/strings.xml" \
-                                                             -o /tmp/RDCBuild/android/app/src/main/res/values/strings.xml
-          curl -fsSL "$BASE/android/app/src/main/res/values/styles.xml" \
-                                                             -o /tmp/RDCBuild/android/app/src/main/res/values/styles.xml
-
-          echo "✅ Template files downloaded"
-          ls -la /tmp/RDCBuild/android/gradle/wrapper/
-
-      - name: 🔧 Configure app package name and settings
+      - name: 🔧 Configure package + write Kotlin files
         run: |
-          S=/tmp/RDCBuild
-
-          # Replace helloworld → rdcbuild everywhere
-          find $S/android -type f \( -name "*.gradle" -o -name "*.xml" -o -name "*.kt" -o -name "*.properties" \) | \
-          while read f; do
-            sed -i \
-              -e 's/com\.helloworld/com.rdcbuild/g' \
-              -e 's/HelloWorld/RDCBuild/g' \
-              -e 's/helloworld/rdcbuild/g' "$f"
-          done
-
+          find /tmp/RDCBuild/android -type f \( -name "*.gradle" -o -name "*.xml" -o -name "*.kt" -o -name "*.properties" \) \
+            -exec sed -i -e 's/com\.helloworld/com.rdcbuild/g' -e 's/HelloWorld/RDCBuild/g' -e 's/helloworld/rdcbuild/g' {} \;
           sed -i 's|<string name="app_name">.*</string>|<string name="app_name">RDC HU Putaway</string>|' \
-            $S/android/app/src/main/res/values/strings.xml
-
-          echo "=== settings.gradle ==="
-          cat $S/android/settings.gradle
+            /tmp/RDCBuild/android/app/src/main/res/values/strings.xml
+          python3 $GITHUB_WORKSPACE/scripts/write_kotlin.py
+          echo "✅ Package configured"
 
       - name: 📦 npm install
         run: |
@@ -91,96 +69,31 @@ jobs:
           cd /tmp/RDCBuild
           npm install --legacy-peer-deps
           echo "✅ $(ls node_modules | wc -l) packages"
-          ls node_modules/@react-native/gradle-plugin/ | head -3
 
-      - name: 🔀 Overlay source + resources
+      - name: 🔀 Overlay JS + resources
         run: |
           S=/tmp/RDCBuild
           W=$GITHUB_WORKSPACE
-
-          # JS source
-          rm -rf $S/src
-          cp -rf $W/src $S/src
+          rm -rf $S/src && cp -rf $W/src $S/src
           cp -f $W/App.js $W/index.js $W/babel.config.js $W/metro.config.js $S/
-
-          # Copy ALL our android resources (drawables, values, etc.)
           cp -rf $W/android/app/src/main/res/. $S/android/app/src/main/res/
-
-          # Our AndroidManifest (with camera permissions etc.)
-          cp -f $W/android/app/src/main/AndroidManifest.xml \
-                $S/android/app/src/main/AndroidManifest.xml
-
-          # Fix package name in our manifest to match rdcbuild
-          sed -i 's/com\.rdchuputaway/com.rdcbuild/g' \
-            $S/android/app/src/main/AndroidManifest.xml
-
-          # Write clean Kotlin files with correct package
-          cat > $S/android/app/src/main/java/com/rdcbuild/MainActivity.kt << 'EOF'
-package com.rdcbuild
-
-import com.facebook.react.ReactActivity
-import com.facebook.react.ReactActivityDelegate
-import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
-import com.facebook.react.defaults.DefaultReactActivityDelegate
-
-class MainActivity : ReactActivity() {
-  override fun getMainComponentName(): String = "RDCHUPutaway"
-  override fun createReactActivityDelegate(): ReactActivityDelegate =
-    DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
-}
-EOF
-
-          cat > $S/android/app/src/main/java/com/rdcbuild/MainApplication.kt << 'EOF'
-package com.rdcbuild
-
-import android.app.Application
-import com.facebook.react.PackageList
-import com.facebook.react.ReactApplication
-import com.facebook.react.ReactHost
-import com.facebook.react.ReactNativeHost
-import com.facebook.react.ReactPackage
-import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.load
-import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
-import com.facebook.react.defaults.DefaultReactNativeHost
-import com.facebook.soloader.SoLoader
-
-class MainApplication : Application(), ReactApplication {
-  override val reactNativeHost: ReactNativeHost =
-    object : DefaultReactNativeHost(this) {
-      override fun getPackages(): List<ReactPackage> = PackageList(this).packages
-      override fun getJSMainModuleName(): String = "index"
-      override fun getUseDeveloperSupport(): Boolean = BuildConfig.DEBUG
-      override val isNewArchEnabled: Boolean = BuildConfig.IS_NEW_ARCHITECTURE_ENABLED
-      override val isHermesEnabled: Boolean = BuildConfig.IS_HERMES_ENABLED
-    }
-  override val reactHost: ReactHost
-    get() = getDefaultReactHost(applicationContext, reactNativeHost)
-  override fun onCreate() {
-    super.onCreate()
-    SoLoader.init(this, false)
-    if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) load()
-  }
-}
-EOF
-
-          echo "✅ Source overlay done"
-          echo "=== Resources ==="
+          cp -f $W/android/app/src/main/AndroidManifest.xml $S/android/app/src/main/AndroidManifest.xml
+          sed -i 's/com\.rdchuputaway/com.rdcbuild/g' $S/android/app/src/main/AndroidManifest.xml
+          echo "✅ Overlay done"
           find $S/android/app/src/main/res -type f | sort
 
       - name: 🔑 Generate debug keystore
         run: |
-          keytool -genkeypair -v \
-            -keystore /tmp/RDCBuild/android/app/debug.keystore \
-            -alias androiddebugkey -keyalg RSA -keysize 2048 \
-            -validity 10000 -storepass android -keypass android \
-            -dname "CN=Android Debug,O=Android,C=US" 2>/dev/null
-          echo "✅ Keystore ready"
+          keytool -genkeypair -v -keystore /tmp/RDCBuild/android/app/debug.keystore \
+            -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass android -keypass android \
+            -dname "CN=Android Debug,O=Android,C=US" 2>/dev/null && echo "✅ Keystore ready"
 
       - name: 💾 Cache Gradle
         uses: actions/cache@v4
         with:
           path: ~/.gradle
-          key: gradle-${{ runner.os }}-rn073-v4
+          key: ${{ runner.os }}-gradle-rn073-v6
 
       - name: 🔧 chmod gradlew
         run: chmod +x /tmp/RDCBuild/android/gradlew
@@ -188,11 +101,7 @@ EOF
       - name: 🏗️ Build APK
         run: |
           cd /tmp/RDCBuild/android
-          ./gradlew assembleDebug \
-            --no-daemon \
-            --stacktrace \
-            -Dorg.gradle.jvmargs="-Xmx4096m" \
-            2>&1
+          ./gradlew assembleDebug --no-daemon --stacktrace -Dorg.gradle.jvmargs="-Xmx4096m" 2>&1
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           JAVA_HOME: ${{ env.JAVA_HOME }}
@@ -200,13 +109,7 @@ EOF
       - name: 🔍 Find APK
         run: |
           APK=$(find /tmp/RDCBuild -name "*.apk" 2>/dev/null | head -1)
-          if [ -n "$APK" ]; then
-            echo "✅ APK found: $APK"
-            echo "Size: $(du -sh $APK | cut -f1)"
-          else
-            echo "❌ No APK found"
-            exit 1
-          fi
+          if [ -n "$APK" ]; then echo "✅ APK: $APK ($(du -sh $APK | cut -f1))"; else echo "❌ No APK"; exit 1; fi
 
       - name: 📤 Upload APK
         uses: actions/upload-artifact@v4
