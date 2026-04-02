@@ -33,7 +33,7 @@ jobs:
         run: |
           sdkmanager "platforms;android-34" "build-tools;34.0.0" 2>/dev/null | grep -E "done|Installed" || true
 
-      - name: 🏗️ react-native init scaffold
+      - name: 🏗️ react-native init
         env:
           CI: ""
         run: |
@@ -43,18 +43,20 @@ jobs:
             --skip-install \
             --npm
           echo "✅ Scaffold done"
+          echo "=== Scaffold app/build.gradle ==="
+          cat /tmp/RDCBuild/android/app/build.gradle
 
-      - name: 🔀 Overlay our source files
+      - name: 🔀 Overlay JS source ONLY
         run: |
           S=/tmp/RDCBuild
           W=$GITHUB_WORKSPACE
 
-          # JS source
+          # JS only - do NOT touch any android gradle files
           rm -rf $S/src
           cp -rf $W/src $S/src
           cp -f $W/App.js $W/index.js $W/app.json $W/babel.config.js $W/metro.config.js $W/package.json $S/
 
-          # Android resources
+          # Only overlay non-gradle android files
           cp -f $W/android/app/src/main/AndroidManifest.xml \
                 $S/android/app/src/main/AndroidManifest.xml
           cp -f $W/android/app/src/main/res/values/strings.xml \
@@ -62,30 +64,22 @@ jobs:
           cp -f $W/android/app/src/main/res/values/styles.xml \
                 $S/android/app/src/main/res/values/styles.xml
 
-          # Kotlin - find scaffold's actual package dir dynamically
+          # Replace Kotlin files - use scaffold's package name
           KT_DIR=$(find $S/android -name "MainActivity.kt" | head -1 | xargs dirname)
-          echo "Kotlin dir: $KT_DIR"
           PKG=$(echo $KT_DIR | sed 's|.*/java/||' | tr '/' '.')
-          echo "Package: $PKG"
-          cp -f $W/android/app/src/main/java/com/rdchuputaway/MainActivity.kt $KT_DIR/
-          cp -f $W/android/app/src/main/java/com/rdchuputaway/MainApplication.kt $KT_DIR/
-          sed -i "s/^package .*/package $PKG/" $KT_DIR/MainActivity.kt
-          sed -i "s/^package .*/package $PKG/" $KT_DIR/MainApplication.kt
+          echo "Using scaffold package: $PKG"
 
-          # ✅ Override gradle files with our versions
-          cp -f $W/android/build.gradle $S/android/build.gradle
-          cp -f $W/android/gradle.properties $S/android/gradle.properties
-          cp -f $W/android/app/build.gradle $S/android/app/build.gradle
-          cp -f $W/android/app/proguard-rules.pro $S/android/app/proguard-rules.pro
+          # Rewrite our Kotlin files with scaffold's package name
+          sed "s/^package .*/package $PKG/" \
+            $W/android/app/src/main/java/com/rdchuputaway/MainActivity.kt > $KT_DIR/MainActivity.kt
+          sed "s/^package .*/package $PKG/" \
+            $W/android/app/src/main/java/com/rdchuputaway/MainApplication.kt > $KT_DIR/MainApplication.kt
 
-          # ✅ Use Gradle 9.0.0
-          cp -f $W/android/gradle/wrapper/gradle-wrapper.properties \
-                $S/android/gradle/wrapper/gradle-wrapper.properties
-
-          echo "=== gradle-wrapper.properties ==="
-          cat $S/android/gradle/wrapper/gradle-wrapper.properties
-          echo "=== settings.gradle ==="
-          cat $S/android/settings.gradle 2>/dev/null || cat $S/android/settings.gradle.kts
+          echo "✅ Overlay done - gradle files untouched"
+          echo "=== Final settings.gradle ==="
+          cat $S/android/settings.gradle
+          echo "=== Final app/build.gradle ==="
+          cat $S/android/app/build.gradle
 
       - name: 📦 npm install
         run: |
@@ -104,7 +98,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.gradle
-          key: gradle-${{ runner.os }}-9-0-0-v1
+          key: gradle-${{ runner.os }}-scaffold-v1
 
       - name: 🔧 chmod gradlew
         run: chmod +x /tmp/RDCBuild/android/gradlew
