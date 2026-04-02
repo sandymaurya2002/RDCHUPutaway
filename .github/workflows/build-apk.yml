@@ -12,10 +12,8 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - name: 📥 Checkout our code
+      - name: 📥 Checkout
         uses: actions/checkout@v4
-        with:
-          path: myapp
 
       - name: 🟢 Node 18
         uses: actions/setup-node@v4
@@ -28,45 +26,52 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: 🤖 Setup Android SDK
+      - name: 🤖 Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: 📦 Install Android platform
+      - name: 📦 Android platform tools
         run: |
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" 2>/dev/null | tail -3 || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" 2>/dev/null | grep -E "done|failed" || true
 
-      - name: 📥 Clone RN 0.73.6 template from GitHub
+      - name: 📦 Get RN template from npm
         run: |
-          git clone --depth 1 --branch v0.73.6 \
-            https://github.com/facebook/react-native.git /tmp/rn-source
-          # Copy the template
-          cp -r /tmp/rn-source/packages/react-native/template /tmp/RDCScaffold
-          echo "✅ Template cloned"
-          ls /tmp/RDCScaffold/
+          mkdir -p /tmp/rn-pkg
+          cd /tmp/rn-pkg
+          npm pack react-native@0.73.6 2>/dev/null
+          tar -xzf react-native-0.73.6.tgz
+          # Template is inside the npm package
+          if [ -d "package/template" ]; then
+            cp -r package/template /tmp/RDCScaffold
+            echo "✅ Template found at package/template"
+          else
+            echo "❌ Template not found, listing package contents:"
+            find package -maxdepth 3 -type d
+            exit 1
+          fi
 
-      - name: 🔧 Configure template package name
+      - name: 🔀 Configure app & overlay source
         run: |
           S=/tmp/RDCScaffold
-          # Replace HelloWorld with RDCHUPutaway in all files
-          find $S -type f \( -name "*.kt" -o -name "*.java" -o -name "*.xml" -o -name "*.gradle" -o -name "*.json" \) | while read f; do
+          W=$GITHUB_WORKSPACE
+
+          # Rename HelloWorld → RDCHUPutaway in all android files
+          find $S/android -type f | xargs grep -rl "HelloWorld\|helloworld\|com\.helloworld" 2>/dev/null | while read f; do
             sed -i 's/com\.helloworld/com.rdchuputaway/g' "$f"
             sed -i 's/HelloWorld/RDCHUPutaway/g' "$f"
             sed -i 's/helloworld/rdchuputaway/g' "$f"
           done
-          # Rename java package directories
-          if [ -d "$S/android/app/src/main/java/com/helloworld" ]; then
-            mv $S/android/app/src/main/java/com/helloworld \
-               $S/android/app/src/main/java/com/rdchuputaway
-          fi
-          echo "✅ Package rename done"
 
-      - name: 🔀 Overlay our source files
-        run: |
-          S=/tmp/RDCScaffold
-          W=$GITHUB_WORKSPACE/myapp
+          # Rename directories
+          find $S/android -type d -name "helloworld" | while read d; do
+            mv "$d" "$(dirname $d)/rdchuputaway"
+          done
+          find $S/android -type d -name "HelloWorld" | while read d; do
+            mv "$d" "$(dirname $d)/RDCHUPutaway"
+          done
 
-          # JS
-          rm -rf $S/src 2>/dev/null; cp -rf $W/src $S/src
+          # Overlay JS source
+          rm -rf $S/src 2>/dev/null
+          cp -rf $W/src $S/src
           cp -f $W/App.js $S/App.js
           cp -f $W/index.js $S/index.js
           cp -f $W/app.json $S/app.json
@@ -74,50 +79,59 @@ jobs:
           cp -f $W/metro.config.js $S/metro.config.js
           cp -f $W/package.json $S/package.json
 
-          # Android
-          [ -f $W/android/build.gradle ]          && cp -f $W/android/build.gradle $S/android/build.gradle
-          [ -f $W/android/settings.gradle ]        && cp -f $W/android/settings.gradle $S/android/settings.gradle
-          [ -f $W/android/gradle.properties ]      && cp -f $W/android/gradle.properties $S/android/gradle.properties
-          [ -f $W/android/app/build.gradle ]       && cp -f $W/android/app/build.gradle $S/android/app/build.gradle
-          [ -f $W/android/app/src/main/AndroidManifest.xml ] && \
-            cp -f $W/android/app/src/main/AndroidManifest.xml $S/android/app/src/main/AndroidManifest.xml
+          # Overlay android files
+          cp -f $W/android/build.gradle $S/android/build.gradle
+          cp -f $W/android/settings.gradle $S/android/settings.gradle
+          cp -f $W/android/gradle.properties $S/android/gradle.properties
+          cp -f $W/android/app/build.gradle $S/android/app/build.gradle
+          cp -f $W/android/app/proguard-rules.pro $S/android/app/proguard-rules.pro
+          cp -f $W/android/app/src/main/AndroidManifest.xml \
+                 $S/android/app/src/main/AndroidManifest.xml
+          cp -f $W/android/app/src/main/res/values/strings.xml \
+                 $S/android/app/src/main/res/values/strings.xml
+          cp -f $W/android/app/src/main/res/values/styles.xml \
+                 $S/android/app/src/main/res/values/styles.xml
 
-          # Kotlin
+          # Kotlin files - put in rdchuputaway package dir
           mkdir -p $S/android/app/src/main/java/com/rdchuputaway
           cp -f $W/android/app/src/main/java/com/rdchuputaway/MainActivity.kt \
                 $S/android/app/src/main/java/com/rdchuputaway/
           cp -f $W/android/app/src/main/java/com/rdchuputaway/MainApplication.kt \
                 $S/android/app/src/main/java/com/rdchuputaway/
 
-          echo "✅ Overlay complete"
+          echo "=== Final android java structure ==="
+          find $S/android/app/src/main/java -type f
           echo "=== Screens ==="
           ls $S/src/screens/
-          echo "=== Kotlin files ==="
-          ls $S/android/app/src/main/java/com/rdchuputaway/
 
       - name: 📦 npm install
         run: |
           cd /tmp/RDCScaffold
           npm install --legacy-peer-deps
-          echo "✅ npm install done"
+          echo "✅ Packages: $(ls node_modules | wc -l)"
 
       - name: 💾 Cache Gradle
         uses: actions/cache@v4
         with:
           path: ~/.gradle
-          key: gradle-${{ runner.os }}-rn073
+          key: gradle-${{ runner.os }}-rn0736-v2
 
-      - name: 🏗️ Build APK
+      - name: 🔧 chmod gradlew
+        run: chmod +x /tmp/RDCScaffold/android/gradlew
+
+      - name: 🏗️ Gradle build
         run: |
           cd /tmp/RDCScaffold/android
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon \
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --stacktrace \
             -Dorg.gradle.jvmargs="-Xmx4096m"
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          JAVA_HOME: ${{ env.JAVA_HOME }}
 
-      - name: 🔍 Find APK
-        run: find /tmp/RDCScaffold -name "*.apk" 2>/dev/null
+      - name: 🔍 Locate APK
+        run: find /tmp/RDCScaffold -name "*.apk"
 
       - name: 📤 Upload APK
         uses: actions/upload-artifact@v4
