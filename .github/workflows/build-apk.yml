@@ -36,28 +36,45 @@ jobs:
       - name: 📦 npm install
         run: |
           npm install --legacy-peer-deps
-          echo "✅ $(ls node_modules | wc -l) packages"
+          echo "=== Verify gradle plugin exists ==="
+          ls node_modules/@react-native/gradle-plugin/
+          echo "node_modules location: $(pwd)/node_modules"
 
       - name: ⬇️ Download gradle-wrapper.jar
         run: |
-          mkdir -p android/gradle/wrapper
           curl -fsSL \
             "https://raw.githubusercontent.com/gradle/gradle/v8.6.0/gradle/wrapper/gradle-wrapper.jar" \
             -o android/gradle/wrapper/gradle-wrapper.jar
           ls -lh android/gradle/wrapper/gradle-wrapper.jar
-          file android/gradle/wrapper/gradle-wrapper.jar
 
-      - name: 🔧 Fix gradlew permissions
+      - name: 🔧 Fix gradlew + settings.gradle
         run: |
           chmod +x android/gradlew
-          head -3 android/gradlew
-          tail -3 android/gradlew
+
+          # CRITICAL: settings.gradle uses ../node_modules relative to android/
+          # Verify the path resolves correctly
+          echo "=== Path check ==="
+          ls android/../node_modules/@react-native/gradle-plugin/ | head -5
+
+          # Rewrite settings.gradle with absolute path to be 100% safe
+          ROOT=$(pwd)
+          cat > android/settings.gradle << EOF
+          pluginManagement { includeBuild("$ROOT/node_modules/@react-native/gradle-plugin") }
+          plugins { id("com.facebook.react.settings") }
+          extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
+          rootProject.name = 'RDCHUPutaway'
+          include ':app'
+          includeBuild("$ROOT/node_modules/@react-native/gradle-plugin")
+          EOF
+
+          echo "=== settings.gradle ==="
+          cat android/settings.gradle
 
       - name: 💾 Cache Gradle
         uses: actions/cache@v4
         with:
           path: ~/.gradle
-          key: gradle-${{ runner.os }}-8-6-v5
+          key: gradle-${{ runner.os }}-8-6-v6
 
       - name: 🏗️ Build APK
         run: |
