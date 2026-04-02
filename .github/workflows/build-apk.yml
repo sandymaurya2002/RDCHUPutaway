@@ -36,27 +36,28 @@ jobs:
       - name: 📦 npm install
         run: |
           npm install --legacy-peer-deps
-          echo "✅ $(ls node_modules | wc -l) packages installed"
-          ls node_modules/@react-native/gradle-plugin/
+          echo "✅ $(ls node_modules | wc -l) packages"
 
       - name: ⬇️ Download gradle-wrapper.jar
         run: |
           mkdir -p android/gradle/wrapper
-          echo "Downloading gradle-wrapper.jar from raw.githubusercontent.com..."
           curl -fsSL \
             "https://raw.githubusercontent.com/gradle/gradle/v8.6.0/gradle/wrapper/gradle-wrapper.jar" \
             -o android/gradle/wrapper/gradle-wrapper.jar
-          echo "Size: $(ls -lh android/gradle/wrapper/gradle-wrapper.jar)"
+          ls -lh android/gradle/wrapper/gradle-wrapper.jar
           file android/gradle/wrapper/gradle-wrapper.jar
 
-      - name: 🔧 chmod gradlew
-        run: chmod +x android/gradlew
+      - name: 🔧 Fix gradlew permissions
+        run: |
+          chmod +x android/gradlew
+          head -3 android/gradlew
+          tail -3 android/gradlew
 
       - name: 💾 Cache Gradle
         uses: actions/cache@v4
         with:
           path: ~/.gradle
-          key: gradle-${{ runner.os }}-8-6-direct-v2
+          key: gradle-${{ runner.os }}-8-6-v5
 
       - name: 🏗️ Build APK
         run: |
