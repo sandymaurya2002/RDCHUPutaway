@@ -37,12 +37,19 @@ jobs:
         run: |
           npm install --legacy-peer-deps
           echo "✅ $(ls node_modules | wc -l) packages"
-          # Verify the critical plugin exists
-          echo "=== gradle-plugin contents ==="
-          ls node_modules/@react-native/gradle-plugin/
-          # Verify path resolution: from android/, ../node_modules = root/node_modules
-          echo "=== Path check: android/../node_modules ==="
-          ls android/../node_modules/@react-native/gradle-plugin/ | head -3
+
+      - name: 🔍 Inspect gradle-plugin package
+        run: |
+          PLUGIN=node_modules/@react-native/gradle-plugin
+          echo "=== Top level ==="
+          ls $PLUGIN/
+          echo "=== Settings file? ==="
+          ls $PLUGIN/settings* 2>/dev/null || echo "NO settings file"
+          echo "=== build.gradle.kts ==="
+          head -30 $PLUGIN/build.gradle.kts
+          echo "=== Plugin descriptors ==="
+          find $PLUGIN -name "*.properties" | grep -i plugin | head -10
+          find $PLUGIN/src -name "*.kt" | grep -i plugin | head -10
 
       - name: ⬇️ Download gradle-wrapper.jar
         run: |
@@ -52,25 +59,17 @@ jobs:
           ls -lh android/gradle/wrapper/gradle-wrapper.jar
 
       - name: 🔧 Setup
-        run: |
-          chmod +x android/gradlew
-          echo "=== settings.gradle ==="
-          cat android/settings.gradle
-          echo "=== build.gradle ==="
-          cat android/build.gradle
+        run: chmod +x android/gradlew
 
       - name: 💾 Cache Gradle
         uses: actions/cache@v4
         with:
           path: ~/.gradle
-          key: gradle-${{ runner.os }}-rn073-v8
+          key: gradle-${{ runner.os }}-rn073-v9
 
       - name: 🏗️ Build APK
         run: |
-          # Run from android/ dir so ../node_modules resolves to project root
           cd android
-          echo "CWD: $(pwd)"
-          echo "node_modules exists: $(ls ../node_modules/@react-native/gradle-plugin | head -2)"
           ./gradlew assembleDebug \
             --no-daemon \
             --stacktrace \
