@@ -38,18 +38,29 @@ jobs:
           npm install --legacy-peer-deps
           echo "✅ $(ls node_modules | wc -l) packages"
 
-      - name: 🔍 Inspect gradle-plugin package
+      - name: 🔍 Inspect gradle-plugin (critical debug)
         run: |
           PLUGIN=node_modules/@react-native/gradle-plugin
-          echo "=== Top level ==="
-          ls $PLUGIN/
-          echo "=== Settings file? ==="
-          ls $PLUGIN/settings* 2>/dev/null || echo "NO settings file"
-          echo "=== build.gradle.kts ==="
-          head -30 $PLUGIN/build.gradle.kts
+          echo "=== ALL files in gradle-plugin ==="
+          find $PLUGIN -maxdepth 3 -type f | sort
+          echo ""
+          echo "=== settings file? ==="
+          cat $PLUGIN/settings.gradle 2>/dev/null || cat $PLUGIN/settings.gradle.kts 2>/dev/null || echo "NO settings file found"
+          echo ""
           echo "=== Plugin descriptors ==="
-          find $PLUGIN -name "*.properties" | grep -i plugin | head -10
-          find $PLUGIN/src -name "*.kt" | grep -i plugin | head -10
+          find $PLUGIN -name "*.properties" | xargs grep -l "implementation-class" 2>/dev/null | head -5
+          find $PLUGIN -name "*.properties" | xargs grep -l "implementation-class" 2>/dev/null | while read f; do echo "--- $f ---"; cat "$f"; done
+
+      - name: 🔧 Add settings.gradle to gradle-plugin if missing
+        run: |
+          PLUGIN=node_modules/@react-native/gradle-plugin
+          if [ ! -f "$PLUGIN/settings.gradle" ] && [ ! -f "$PLUGIN/settings.gradle.kts" ]; then
+            echo "rootProject.name = 'gradle-plugin'" > $PLUGIN/settings.gradle
+            echo "✅ Created settings.gradle in gradle-plugin"
+          else
+            echo "ℹ️  settings file already exists"
+          fi
+          cat $PLUGIN/settings.gradle 2>/dev/null || cat $PLUGIN/settings.gradle.kts 2>/dev/null
 
       - name: ⬇️ Download gradle-wrapper.jar
         run: |
@@ -65,7 +76,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.gradle
-          key: gradle-${{ runner.os }}-rn073-v9
+          key: gradle-${{ runner.os }}-rn073-v10
 
       - name: 🏗️ Build APK
         run: |
