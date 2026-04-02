@@ -10,62 +10,115 @@ jobs:
     name: Build Debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    container:
-      image: reactnativecommunity/react-native-android:latest
 
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v4
 
-      - name: 🟢 Use Node 18
-        run: |
-          node --version
-          npm --version
-          java -version
+      - name: 🟢 Node 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
 
-      - name: 🏗️ Scaffold React Native project
+      - name: ☕ Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: 🤖 Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 📦 Install SDKs
         run: |
-          cd /tmp
-          npx react-native@0.73.6 init RDCScaffold \
+          yes | sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" 2>/dev/null | grep -v "^\[" || true
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+
+      - name: 🏗️ Create RN project using @react-native-community/cli
+        run: |
+          npm install -g @react-native-community/cli@12.3.6
+          react-native init RDCScaffold \
             --version 0.73.6 \
+            --directory /tmp/RDCScaffold \
             --skip-install \
-            --npm
-          echo "✅ Scaffold done"
+            --npm \
+            --verbose
+        env:
+          CI: true
 
-      - name: 🔀 Overlay source files
+      - name: 🔀 Overlay our source onto scaffold
         run: |
           S=/tmp/RDCScaffold
           W=$GITHUB_WORKSPACE
-          cp -rf $W/src $S/
-          cp -f $W/App.js $W/index.js $W/app.json $W/babel.config.js $W/metro.config.js $W/package.json $S/
+
+          # JS source
+          rm -rf $S/src
+          cp -rf $W/src $S/src
+          cp -f $W/App.js $S/App.js
+          cp -f $W/index.js $S/index.js
+          cp -f $W/app.json $S/app.json
+          cp -f $W/babel.config.js $S/babel.config.js
+          cp -f $W/metro.config.js $S/metro.config.js
+          cp -f $W/package.json $S/package.json
+
+          # Android native
           cp -f $W/android/build.gradle $S/android/build.gradle
           cp -f $W/android/settings.gradle $S/android/settings.gradle
           cp -f $W/android/gradle.properties $S/android/gradle.properties
           cp -f $W/android/app/build.gradle $S/android/app/build.gradle
           cp -f $W/android/app/proguard-rules.pro $S/android/app/proguard-rules.pro
-          cp -f $W/android/app/src/main/AndroidManifest.xml $S/android/app/src/main/AndroidManifest.xml
-          cp -f $W/android/app/src/main/res/values/strings.xml $S/android/app/src/main/res/values/strings.xml
-          cp -f $W/android/app/src/main/res/values/styles.xml $S/android/app/src/main/res/values/styles.xml
-          mkdir -p $S/android/app/src/main/java/com/rdchuputaway
-          cp -f $W/android/app/src/main/java/com/rdchuputaway/*.kt $S/android/app/src/main/java/com/rdchuputaway/
-          echo "✅ Overlay done"
+          cp -f $W/android/app/src/main/AndroidManifest.xml \
+                 $S/android/app/src/main/AndroidManifest.xml
+          cp -f $W/android/app/src/main/res/values/strings.xml \
+                 $S/android/app/src/main/res/values/strings.xml
+          cp -f $W/android/app/src/main/res/values/styles.xml \
+                 $S/android/app/src/main/res/values/styles.xml
 
-      - name: 📦 Install dependencies
+          # Replace Kotlin files
+          DEST=$S/android/app/src/main/java/com/rdchuputaway
+          SCAFFOLD_PKG=$(find $S/android/app/src/main/java -name "MainActivity.kt" | head -1 | xargs dirname)
+          # Copy to both locations to be safe
+          mkdir -p $DEST
+          cp -f $W/android/app/src/main/java/com/rdchuputaway/MainActivity.kt $DEST/
+          cp -f $W/android/app/src/main/java/com/rdchuputaway/MainApplication.kt $DEST/
+          if [ -n "$SCAFFOLD_PKG" ] && [ "$SCAFFOLD_PKG" != "$DEST" ]; then
+            cp -f $W/android/app/src/main/java/com/rdchuputaway/MainActivity.kt $SCAFFOLD_PKG/
+            cp -f $W/android/app/src/main/java/com/rdchuputaway/MainApplication.kt $SCAFFOLD_PKG/
+          fi
+
+          echo "=== Scaffold structure ==="
+          ls /tmp/RDCScaffold/android/app/src/main/java/com/
+
+      - name: 📦 Install npm dependencies
         run: |
           cd /tmp/RDCScaffold
           npm install --legacy-peer-deps
 
-      - name: 💾 Cache Gradle
+      - name: 💾 Cache Gradle packages
         uses: actions/cache@v4
         with:
-          path: ~/.gradle
-          key: gradle-v1-${{ hashFiles('/tmp/RDCScaffold/android/gradle/wrapper/gradle-wrapper.properties') }}
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('/tmp/RDCScaffold/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
 
-      - name: 🏗️ Build APK
+      - name: 🔧 gradlew executable
+        run: chmod +x /tmp/RDCScaffold/android/gradlew
+
+      - name: 🏗️ Build Debug APK
         run: |
           cd /tmp/RDCScaffold/android
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon -Dorg.gradle.jvmargs="-Xmx4g"
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --info \
+            -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=512m"
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          JAVA_HOME: ${{ env.JAVA_HOME }}
+
+      - name: 🔍 Find APK
+        run: find /tmp/RDCScaffold -name "*.apk" 2>/dev/null
 
       - name: 📤 Upload APK
         uses: actions/upload-artifact@v4
@@ -73,3 +126,6 @@ jobs:
           name: RDCHUPutaway-debug-apk
           path: /tmp/RDCScaffold/android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+
+      - name: ✅ Done
+        run: echo "APK built with SAP URL= https://sap-api.v2retail.net | User=901 | Plant=DW01"
