@@ -33,66 +33,65 @@ jobs:
         run: |
           sdkmanager "platforms;android-34" "build-tools;34.0.0" 2>/dev/null | grep -E "done|Installed" || true
 
-      - name: 📦 Extract RN 0.73.6 template via npm pack
+      - name: 📦 Extract RN 0.73.6 template
         run: |
           mkdir -p /tmp/rn-pkg && cd /tmp/rn-pkg
           npm pack react-native@0.73.6 2>&1 | tail -3
           tar -xzf react-native-0.73.6.tgz
-          ls package/
           cp -r package/template /tmp/RDCScaffold
           echo "✅ Template extracted"
-          ls /tmp/RDCScaffold/android/
 
-      - name: 🔀 Overlay our JS source files
+      - name: 🔀 Overlay JS source
         run: |
           S=/tmp/RDCScaffold
           W=$GITHUB_WORKSPACE
           rm -rf $S/src 2>/dev/null
-          cp -rf $W/src            $S/src
-          cp -f  $W/App.js         $S/App.js
-          cp -f  $W/index.js       $S/index.js
-          cp -f  $W/app.json       $S/app.json
+          cp -rf $W/src             $S/src
+          cp -f  $W/App.js          $S/App.js
+          cp -f  $W/index.js        $S/index.js
+          cp -f  $W/app.json        $S/app.json
           cp -f  $W/babel.config.js $S/babel.config.js
           cp -f  $W/metro.config.js $S/metro.config.js
-          cp -f  $W/package.json   $S/package.json
+          cp -f  $W/package.json    $S/package.json
           echo "✅ JS overlay done"
 
-      - name: 📦 npm install (BEFORE gradle touches anything)
+      - name: 📦 npm install (before Gradle)
         run: |
           cd /tmp/RDCScaffold
           npm install --legacy-peer-deps
-          echo "✅ node_modules ready: $(ls node_modules | wc -l) packages"
-          # Verify the critical gradle plugin exists
+          echo "✅ $(ls node_modules | wc -l) packages installed"
           ls node_modules/@react-native/gradle-plugin/
 
-      - name: 🔀 Overlay Android files (AFTER npm install)
+      - name: 🔀 Overlay Android files
         run: |
           S=/tmp/RDCScaffold
           W=$GITHUB_WORKSPACE
 
-          # Fix package name in template files first
+          # Rename HelloWorld → RDCHUPutaway in template files
           find $S/android -type f \( -name "*.kt" -o -name "*.java" -o -name "*.xml" -o -name "*.gradle" \) \
             -exec sed -i \
               -e 's/com\.helloworld/com.rdchuputaway/g' \
               -e 's/HelloWorld/RDCHUPutaway/g' \
               -e 's/helloworld/rdchuputaway/g' {} \;
+          find $S/android -type d -name "helloworld" -exec bash -c 'mv "$1" "$(dirname "$1")/rdchuputaway"' _ {} \;
 
-          # Rename java package dir
-          find $S/android -type d -name "helloworld" | while read d; do
-            mv "$d" "$(dirname $d)/rdchuputaway"
-          done
+          # Copy our android config files
+          cp -f $W/android/build.gradle             $S/android/build.gradle
+          cp -f $W/android/gradle.properties        $S/android/gradle.properties
+          cp -f $W/android/app/build.gradle         $S/android/app/build.gradle
+          cp -f $W/android/app/proguard-rules.pro   $S/android/app/proguard-rules.pro
 
-          # Copy our android files (NOT settings.gradle - use template's own)
-          cp -f $W/android/build.gradle              $S/android/build.gradle
-          cp -f $W/android/gradle.properties         $S/android/gradle.properties
-          cp -f $W/android/app/build.gradle          $S/android/app/build.gradle
-          cp -f $W/android/app/proguard-rules.pro    $S/android/app/proguard-rules.pro
+          # ✅ KEY FIX: copy our gradle-wrapper.properties (upgrades 8.3 → 8.6)
+          cp -f $W/android/gradle/wrapper/gradle-wrapper.properties \
+                $S/android/gradle/wrapper/gradle-wrapper.properties
+
+          # Manifests & resources
           cp -f $W/android/app/src/main/AndroidManifest.xml \
-                 $S/android/app/src/main/AndroidManifest.xml
+                $S/android/app/src/main/AndroidManifest.xml
           cp -f $W/android/app/src/main/res/values/strings.xml \
-                 $S/android/app/src/main/res/values/strings.xml
+                $S/android/app/src/main/res/values/strings.xml
           cp -f $W/android/app/src/main/res/values/styles.xml \
-                 $S/android/app/src/main/res/values/styles.xml
+                $S/android/app/src/main/res/values/styles.xml
 
           # Kotlin files
           mkdir -p $S/android/app/src/main/java/com/rdchuputaway
@@ -101,10 +100,12 @@ jobs:
           cp -f $W/android/app/src/main/java/com/rdchuputaway/MainApplication.kt \
                 $S/android/app/src/main/java/com/rdchuputaway/
 
-          # Fix settings.gradle rootProject name only
+          # Patch settings.gradle - just fix project name, keep plugin setup
           sed -i "s/rootProject.name = .*/rootProject.name = 'RDCHUPutaway'/" \
                  $S/android/settings.gradle
 
+          echo "=== gradle-wrapper.properties ==="
+          cat $S/android/gradle/wrapper/gradle-wrapper.properties
           echo "=== settings.gradle ==="
           cat $S/android/settings.gradle
           echo "=== Kotlin files ==="
@@ -114,7 +115,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.gradle
-          key: gradle-${{ runner.os }}-rn0736-v3
+          key: gradle-${{ runner.os }}-8-6-rn0736
 
       - name: 🔧 chmod gradlew
         run: chmod +x /tmp/RDCScaffold/android/gradlew
@@ -139,3 +140,8 @@ jobs:
           name: RDCHUPutaway-debug-apk
           path: /tmp/RDCScaffold/android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+
+      - name: ✅ Summary
+        run: |
+          echo "## ✅ APK Built!" >> $GITHUB_STEP_SUMMARY
+          echo "SAP: https://sap-api.v2retail.net | User: 901 | Plant: DW01" >> $GITHUB_STEP_SUMMARY
