@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-apk:
-    name: Build with Expo EAS
+    name: Build Debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -33,46 +33,59 @@ jobs:
         run: |
           sdkmanager "platforms;android-34" "build-tools;34.0.0" 2>/dev/null | grep -E "done|Installed" || true
 
-      - name: 🏗️ Create fresh RN project with proper init
+      - name: 🏗️ react-native init scaffold
         env:
           CI: ""
         run: |
-          # CI="" prevents react-native from skipping interactive mode wrong
-          # Use --skip-git-init to skip git operations  
           npx --yes react-native@0.73.6 init RDCBuild \
             --version 0.73.6 \
             --directory /tmp/RDCBuild \
             --skip-install \
             --npm
-          echo "✅ Init done"
-          echo "=== Android structure ==="
-          find /tmp/RDCBuild/android -name "settings.gradle*" -o -name "build.gradle*" | sort
-          echo "=== settings.gradle ==="
-          cat /tmp/RDCBuild/android/settings.gradle 2>/dev/null || cat /tmp/RDCBuild/android/settings.gradle.kts 2>/dev/null
+          echo "✅ Scaffold done"
 
-      - name: 🔀 Overlay our source
+      - name: 🔀 Overlay our source files
         run: |
           S=/tmp/RDCBuild
           W=$GITHUB_WORKSPACE
+
+          # JS source
           rm -rf $S/src
           cp -rf $W/src $S/src
           cp -f $W/App.js $W/index.js $W/app.json $W/babel.config.js $W/metro.config.js $W/package.json $S/
+
+          # Android resources
           cp -f $W/android/app/src/main/AndroidManifest.xml \
                 $S/android/app/src/main/AndroidManifest.xml
           cp -f $W/android/app/src/main/res/values/strings.xml \
                 $S/android/app/src/main/res/values/strings.xml
           cp -f $W/android/app/src/main/res/values/styles.xml \
                 $S/android/app/src/main/res/values/styles.xml
-          # Find and replace Kotlin files in scaffold's actual package dir
+
+          # Kotlin - find scaffold's actual package dir dynamically
           KT_DIR=$(find $S/android -name "MainActivity.kt" | head -1 | xargs dirname)
           echo "Kotlin dir: $KT_DIR"
+          PKG=$(echo $KT_DIR | sed 's|.*/java/||' | tr '/' '.')
+          echo "Package: $PKG"
           cp -f $W/android/app/src/main/java/com/rdchuputaway/MainActivity.kt $KT_DIR/
           cp -f $W/android/app/src/main/java/com/rdchuputaway/MainApplication.kt $KT_DIR/
-          # Fix package name in Kotlin files to match scaffold
-          PKG=$(echo $KT_DIR | sed 's|.*/java/||' | tr '/' '.')
           sed -i "s/^package .*/package $PKG/" $KT_DIR/MainActivity.kt
           sed -i "s/^package .*/package $PKG/" $KT_DIR/MainApplication.kt
-          echo "Package: $PKG"
+
+          # ✅ Override gradle files with our versions
+          cp -f $W/android/build.gradle $S/android/build.gradle
+          cp -f $W/android/gradle.properties $S/android/gradle.properties
+          cp -f $W/android/app/build.gradle $S/android/app/build.gradle
+          cp -f $W/android/app/proguard-rules.pro $S/android/app/proguard-rules.pro
+
+          # ✅ Use Gradle 9.0.0
+          cp -f $W/android/gradle/wrapper/gradle-wrapper.properties \
+                $S/android/gradle/wrapper/gradle-wrapper.properties
+
+          echo "=== gradle-wrapper.properties ==="
+          cat $S/android/gradle/wrapper/gradle-wrapper.properties
+          echo "=== settings.gradle ==="
+          cat $S/android/settings.gradle 2>/dev/null || cat $S/android/settings.gradle.kts
 
       - name: 📦 npm install
         run: |
@@ -80,11 +93,18 @@ jobs:
           npm install --legacy-peer-deps
           echo "✅ $(ls node_modules | wc -l) packages"
 
+      - name: ⬇️ Download gradle-wrapper.jar
+        run: |
+          curl -fsSL \
+            "https://raw.githubusercontent.com/gradle/gradle/v8.6.0/gradle/wrapper/gradle-wrapper.jar" \
+            -o /tmp/RDCBuild/android/gradle/wrapper/gradle-wrapper.jar
+          ls -lh /tmp/RDCBuild/android/gradle/wrapper/gradle-wrapper.jar
+
       - name: 💾 Cache Gradle
         uses: actions/cache@v4
         with:
           path: ~/.gradle
-          key: gradle-${{ runner.os }}-rn073-init-v1
+          key: gradle-${{ runner.os }}-9-0-0-v1
 
       - name: 🔧 chmod gradlew
         run: chmod +x /tmp/RDCBuild/android/gradlew
@@ -92,8 +112,6 @@ jobs:
       - name: 🏗️ Build APK
         run: |
           cd /tmp/RDCBuild/android
-          echo "=== settings.gradle ==="
-          cat settings.gradle 2>/dev/null || cat settings.gradle.kts
           ./gradlew assembleDebug \
             --no-daemon \
             --stacktrace \
