@@ -33,30 +33,45 @@ jobs:
         run: |
           sdkmanager "platforms;android-34" "build-tools;34.0.0" 2>/dev/null | grep -E "done|Installed" || true
 
-      - name: 🏗️ react-native init
+      # Step 1: Init scaffold WITHOUT --skip-install so it runs npm install itself
+      # This guarantees node_modules exists before gradle ever runs
+      - name: 🏗️ react-native init (with npm install)
         env:
           CI: ""
         run: |
           npx --yes react-native@0.73.6 init RDCBuild \
             --version 0.73.6 \
             --directory /tmp/RDCBuild \
-            --skip-install \
             --npm
-          echo "✅ Scaffold done"
-          echo "=== Scaffold app/build.gradle ==="
+          echo "✅ Init + npm install done"
+          echo "=== node_modules exists? ==="
+          ls /tmp/RDCBuild/node_modules/@react-native/gradle-plugin/ | head -5
+          echo "=== settings.gradle ==="
+          cat /tmp/RDCBuild/android/settings.gradle
+          echo "=== app/build.gradle ==="
           cat /tmp/RDCBuild/android/app/build.gradle
 
-      - name: 🔀 Overlay JS source ONLY
+      # Step 2: Replace scaffold's package.json with ours and re-install our deps
+      - name: 📦 Install our dependencies
+        run: |
+          cp -f $GITHUB_WORKSPACE/package.json /tmp/RDCBuild/package.json
+          cd /tmp/RDCBuild
+          npm install --legacy-peer-deps
+          echo "✅ $(ls node_modules | wc -l) packages"
+          # Verify RN gradle plugin still intact
+          ls node_modules/@react-native/gradle-plugin/
+
+      # Step 3: Overlay ONLY JS source - zero android gradle files touched
+      - name: 🔀 Overlay JS source only
         run: |
           S=/tmp/RDCBuild
           W=$GITHUB_WORKSPACE
 
-          # JS only - do NOT touch any android gradle files
           rm -rf $S/src
           cp -rf $W/src $S/src
-          cp -f $W/App.js $W/index.js $W/app.json $W/babel.config.js $W/metro.config.js $W/package.json $S/
+          cp -f $W/App.js $W/index.js $W/app.json $W/babel.config.js $W/metro.config.js $S/
 
-          # Only overlay non-gradle android files
+          # Resources only (no gradle files)
           cp -f $W/android/app/src/main/AndroidManifest.xml \
                 $S/android/app/src/main/AndroidManifest.xml
           cp -f $W/android/app/src/main/res/values/strings.xml \
@@ -64,41 +79,29 @@ jobs:
           cp -f $W/android/app/src/main/res/values/styles.xml \
                 $S/android/app/src/main/res/values/styles.xml
 
-          # Replace Kotlin files - use scaffold's package name
+          # Kotlin files - auto-detect scaffold's package
           KT_DIR=$(find $S/android -name "MainActivity.kt" | head -1 | xargs dirname)
           PKG=$(echo $KT_DIR | sed 's|.*/java/||' | tr '/' '.')
-          echo "Using scaffold package: $PKG"
-
-          # Rewrite our Kotlin files with scaffold's package name
+          echo "Scaffold package: $PKG"
           sed "s/^package .*/package $PKG/" \
             $W/android/app/src/main/java/com/rdchuputaway/MainActivity.kt > $KT_DIR/MainActivity.kt
           sed "s/^package .*/package $PKG/" \
             $W/android/app/src/main/java/com/rdchuputaway/MainApplication.kt > $KT_DIR/MainApplication.kt
 
-          echo "✅ Overlay done - gradle files untouched"
-          echo "=== Final settings.gradle ==="
-          cat $S/android/settings.gradle
-          echo "=== Final app/build.gradle ==="
-          cat $S/android/app/build.gradle
-
-      - name: 📦 npm install
-        run: |
-          cd /tmp/RDCBuild
-          npm install --legacy-peer-deps
-          echo "✅ $(ls node_modules | wc -l) packages"
+          echo "✅ JS overlay done - all gradle files untouched"
 
       - name: ⬇️ Download gradle-wrapper.jar
         run: |
           curl -fsSL \
             "https://raw.githubusercontent.com/gradle/gradle/v8.6.0/gradle/wrapper/gradle-wrapper.jar" \
             -o /tmp/RDCBuild/android/gradle/wrapper/gradle-wrapper.jar
-          ls -lh /tmp/RDCBuild/android/gradle/wrapper/gradle-wrapper.jar
+          ls -lh /tmp/RDCBuild/android/gradle/wrapper/
 
       - name: 💾 Cache Gradle
         uses: actions/cache@v4
         with:
           path: ~/.gradle
-          key: gradle-${{ runner.os }}-scaffold-v1
+          key: gradle-${{ runner.os }}-rn073-final-v1
 
       - name: 🔧 chmod gradlew
         run: chmod +x /tmp/RDCBuild/android/gradlew
