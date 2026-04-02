@@ -37,6 +37,12 @@ jobs:
         run: |
           npm install --legacy-peer-deps
           echo "✅ $(ls node_modules | wc -l) packages"
+          # Verify the critical plugin exists
+          echo "=== gradle-plugin contents ==="
+          ls node_modules/@react-native/gradle-plugin/
+          # Verify path resolution: from android/, ../node_modules = root/node_modules
+          echo "=== Path check: android/../node_modules ==="
+          ls android/../node_modules/@react-native/gradle-plugin/ | head -3
 
       - name: ⬇️ Download gradle-wrapper.jar
         run: |
@@ -57,11 +63,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.gradle
-          key: gradle-${{ runner.os }}-classpath-v1
+          key: gradle-${{ runner.os }}-rn073-v8
 
       - name: 🏗️ Build APK
         run: |
+          # Run from android/ dir so ../node_modules resolves to project root
           cd android
+          echo "CWD: $(pwd)"
+          echo "node_modules exists: $(ls ../node_modules/@react-native/gradle-plugin | head -2)"
           ./gradlew assembleDebug \
             --no-daemon \
             --stacktrace \
